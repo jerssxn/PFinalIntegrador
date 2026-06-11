@@ -106,10 +106,10 @@ void setup() {
         Serial.println("[OLED] ERROR: No encontrada");
     } else {
         Serial.println("[OLED] OK");
-        oledSplash("VITALGUARD IoT", "Conectando WiFi...", "");
+        oledSplash("VITALGUARD IoT", "Iniciando red...", "");
     }
 
-    // --- WiFi en modo estación (conecta a una red real con internet) ---
+    // --- WiFi: AP local siempre activo + STA a internet si hay credenciales ---
     wifiConnect();
 
     // --- Hora por NTP (para el timestamp de las publicaciones) ---
@@ -118,7 +118,7 @@ void setup() {
     // --- MQTT hacia el broker EMQX ---
     mqttSetup();
 
-    // --- Servidor Web + WebSocket (dashboard local, ahora sobre la IP STA) ---
+    // --- Servidor Web + WebSocket (dashboard local, accesible por AP y/o STA) ---
     server.on("/", handleRoot);
     server.onNotFound([]() { server.send(404, "text/plain", "Not found"); });
     server.begin();
@@ -126,11 +126,13 @@ void setup() {
     webSocket.onEvent(webSocketEvent);
     Serial.println("[HTTP] Servidor en puerto 80, WebSocket en 81");
 
-    // Mostrar IP del dashboard en OLED
+    // Mostrar cómo abrir el dashboard en el OLED
     char l3[24];
     snprintf(l3, sizeof(l3), "http://%s", wifiGetIp().c_str());
-    oledSplash("VitalGuard IoT", wifiIsConnected() ? "WiFi OK" : "WiFi --", l3);
-    delay(2000);
+    oledSplash("AP: VitalGuard-S3",
+               wifiIsConnected() ? "Nube: conectada" : "Solo AP local",
+               l3);
+    delay(2500);
 
     // --- Tarea del sensor en Core 0 ---
     xTaskCreatePinnedToCore(sensorTask, "SensorTask", 16384, NULL, 2, NULL, 0);
