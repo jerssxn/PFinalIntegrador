@@ -168,6 +168,7 @@ void loop() {
                          "\"finger\":" + String(globalFingerPresent ? "true" : "false") + ","
                          "\"beat\":"   + String(globalBeatDetected  ? "true" : "false") + "}";
             webSocket.broadcastTXT(msg);
+            globalBeatDetected = false;
         }
     }
 
@@ -179,7 +180,6 @@ void loop() {
             mqttPublishBiometrics(globalBPM, globalSpO2, globalFingerPresent,
                                   globalBeatDetected, globalRawIR);
         }
-        globalBeatDetected = false;  // se reinicia tras cada ciclo de envío
     }
 }
 
@@ -247,6 +247,9 @@ void sensorTask(void* pvParameters) {
     unsigned long lastBeatMs = 0;
     unsigned long lastDisplayMs = 0;
 
+    // Contador de muestras para log periódico
+    uint32_t sampleCount = 0;
+
     Serial.println("[SENSOR] Esperando dedo...");
 
     while (true) {
@@ -255,6 +258,7 @@ void sensorTask(void* pvParameters) {
         while (particleSensor.available()) {
             long rawIR  = particleSensor.getFIFOIR();
             long rawRed = particleSensor.getFIFORed();
+            sampleCount++;
             globalRawIR = rawIR;
 
             // ---- DETECCIÓN DE DEDO ----
@@ -314,6 +318,8 @@ void sensorTask(void* pvParameters) {
                     globalBPM = avgBPM;
                     globalBeatDetected = true;
 
+                    Serial.printf("[BEAT] %d BPM  (intervalo=%ldms)\n", bpm, delta);
+
                     // ---- SpO2 por ratio-of-ratios ----
                     float irRange = irAC_max - irAC_min;
                     float rdRange = rdAC_max - rdAC_min;
@@ -321,6 +327,9 @@ void sensorTask(void* pvParameters) {
                     if (dcIR > 5000.0f && dcRed > 5000.0f && irRange > 5.0f && rdRange > 5.0f) {
                         float R    = (rdRange / dcRed) / (irRange / dcIR);
                         float spo2 = 104.0f - 17.0f * R;
+
+                        Serial.printf("[SPO2] R=%.3f -> SpO2=%.1f%%  (irRange=%.1f rdRange=%.1f)\n",
+                                      R, spo2, irRange, rdRange);
 
                         if (spo2 >= 80.0f && spo2 <= 100.0f) {
                             spo2Buffer[spo2Idx++] = spo2;
@@ -361,17 +370,13 @@ void sensorTask(void* pvParameters) {
 void drawOled(float bpm, float spo2, bool finger, bool beat, long rawIR) {
     display.clearDisplay();
 
-    // Indicadores de conexión en la esquina superior derecha (W=WiFi, M=MQTT)
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(104, 56);
-    display.print(wifiIsConnected() ? "W" : "-");
-    display.print(mqttIsConnected() ? "M" : "-");
-
     if (!finger) {
+        // Sin dedo — pantalla de espera
+        display.setTextSize(1);
+        display.setTextColor(SSD1306_WHITE);
         display.drawRect(0, 0, 128, 64, SSD1306_WHITE);
         display.setCursor(20, 10);
-        display.println("VITALGUARD IoT");
+        display.println("VITALGUARD S3");
         display.drawFastHLine(4, 20, 120, SSD1306_WHITE);
         display.setCursor(10, 28);
         display.println("Coloque el dedo");
@@ -384,6 +389,10 @@ void drawOled(float bpm, float spo2, bool finger, bool beat, long rawIR) {
     }
 
     // ---- Header: BPM y SpO2 ----
+    display.setTextColor(SSD1306_WHITE);
+    display.setTextSize(1);
+
+    // Corazón parpadeante
     display.setCursor(0, 2);
     display.print(beat ? "<3" : "o ");
     display.printf(" %3d BPM", (int)bpm);
@@ -397,9 +406,10 @@ void drawOled(float bpm, float spo2, bool finger, bool beat, long rawIR) {
     static float ppgMin = -500, ppgMax = 500;
     float val = globalPPGValue;
 
+    // Auto-escala adaptativa
     if (val < ppgMin) ppgMin = val;
     if (val > ppgMax) ppgMax = val;
-    ppgMin *= 0.999f;
+    ppgMin *= 0.999f;  // Retorno lento al centro
     ppgMax *= 0.999f;
 
     float range = ppgMax - ppgMin;
@@ -408,9 +418,11 @@ void drawOled(float bpm, float spo2, bool finger, bool beat, long rawIR) {
     int y = GRAPH_Y_OFF + GRAPH_HEIGHT - (int)(((val - ppgMin) / range) * GRAPH_HEIGHT);
     y = constrain(y, GRAPH_Y_OFF, GRAPH_Y_OFF + GRAPH_HEIGHT - 1);
 
+    // Desplazar buffer izquierda
     memmove(oledGraph, oledGraph + 1, (GRAPH_WIDTH - 1) * sizeof(int));
     oledGraph[GRAPH_WIDTH - 1] = y;
 
+    // Dibujar
     for (int i = 1; i < GRAPH_WIDTH; i++) {
         display.drawLine(i - 1, oledGraph[i - 1], i, oledGraph[i], SSD1306_WHITE);
     }
