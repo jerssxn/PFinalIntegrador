@@ -24,7 +24,45 @@ static bool wifiConfigured() {
     return true;
 }
 
+// ── Eventos de WiFi en tiempo real (para diagnóstico) ──────────────────────
+// Esto imprime exactamente cuándo el ESP32 se asocia al router, obtiene IP
+// (= internet OK) o pierde el enlace, y quién entra/sale del AP local.
+static void onWiFiEvent(WiFiEvent_t event, WiFiEventInfo_t info) {
+    switch (event) {
+        case ARDUINO_EVENT_WIFI_STA_START:
+            Serial.println("[WIFI-EVT] STA iniciada, buscando la red...");
+            break;
+        case ARDUINO_EVENT_WIFI_STA_CONNECTED:
+            Serial.println("[WIFI-EVT] Asociado al router, esperando IP (DHCP)...");
+            break;
+        case ARDUINO_EVENT_WIFI_STA_GOT_IP:
+            Serial.printf("[WIFI-EVT] >>> CONECTADO A INTERNET <<<  IP=%s  GW=%s  RSSI=%d dBm\n",
+                          WiFi.localIP().toString().c_str(),
+                          WiFi.gatewayIP().toString().c_str(),
+                          WiFi.RSSI());
+            break;
+        case ARDUINO_EVENT_WIFI_STA_LOST_IP:
+            Serial.println("[WIFI-EVT] Se perdio la IP de STA.");
+            break;
+        case ARDUINO_EVENT_WIFI_STA_DISCONNECTED:
+            Serial.printf("[WIFI-EVT] STA desconectada (motivo=%d). Se reintentara.\n",
+                          info.wifi_sta_disconnected.reason);
+            break;
+        case ARDUINO_EVENT_WIFI_AP_STACONNECTED:
+            Serial.println("[WIFI-EVT] Un dispositivo se CONECTO al AP local (VitalGuard-S3).");
+            break;
+        case ARDUINO_EVENT_WIFI_AP_STADISCONNECTED:
+            Serial.println("[WIFI-EVT] Un dispositivo se DESCONECTO del AP local.");
+            break;
+        default:
+            break;
+    }
+}
+
 void wifiConnect() {
+    // Eventos de diagnóstico (debe registrarse antes de iniciar el WiFi).
+    WiFi.onEvent(onWiFiEvent);
+
     // AP + STA en simultáneo: el AP local nunca se cae; STA es solo para la nube.
     WiFi.mode(WIFI_AP_STA);
     WiFi.setSleep(false);  // mejor latencia para MQTT

@@ -46,6 +46,20 @@ static void otaTask(void* param) {
     // Seguir redirecciones (los endpoints de S3 suelen redirigir).
     httpUpdate.setFollowRedirects(HTTPC_FORCE_FOLLOW_REDIRECTS);
     httpUpdate.rebootOnUpdate(true);
+
+    // Log de progreso de la descarga (cada ~10%).
+    httpUpdate.onStart([]() { Serial.println("[OTA] Descarga iniciada."); });
+    httpUpdate.onProgress([](int cur, int total) {
+        static int lastPct = -1;
+        int pct = total > 0 ? (cur * 100 / total) : 0;
+        if (pct != lastPct && (pct % 10 == 0)) {
+            lastPct = pct;
+            Serial.printf("[OTA] Descargando... %d%%  (%d/%d bytes)\n", pct, cur, total);
+        }
+    });
+    httpUpdate.onEnd([]() { Serial.println("[OTA] Descarga completa, aplicando firmware..."); });
+
+    Serial.println("[OTA] Contactando al servidor de firmware...");
     t_httpUpdate_return ret = httpUpdate.update(*netClient, url);
 
     switch (ret) {

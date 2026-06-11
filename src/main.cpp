@@ -114,13 +114,19 @@ void setup() {
 
     // --- Hora por NTP (para el timestamp de las publicaciones) ---
     configTime(-5 * 3600, 0, "pool.ntp.org", "time.nist.gov");
+    Serial.println("[NTP] Hora solicitada (se sincroniza cuando haya internet).");
 
     // --- MQTT hacia el broker EMQX ---
     mqttSetup();
 
     // --- Servidor Web + WebSocket (dashboard local, accesible por AP y/o STA) ---
     server.on("/", handleRoot);
-    server.onNotFound([]() { server.send(404, "text/plain", "Not found"); });
+    // El navegador siempre pide /favicon.ico; respondemos 204 para no ensuciar el log.
+    server.on("/favicon.ico", []() { server.send(204); });
+    server.onNotFound([]() {
+        Serial.printf("[HTTP] Ruta no encontrada (404): %s\n", server.uri().c_str());
+        server.send(404, "text/plain", "Not found");
+    });
     server.begin();
     webSocket.begin();
     webSocket.onEvent(webSocketEvent);
@@ -190,9 +196,11 @@ void loop() {
     static unsigned long lastDebug = 0;
     if (now - lastDebug >= 5000) {
         lastDebug = now;
-        Serial.printf("[ESTADO] WiFi=%s IP=%s | MQTT=%s | dashboard=%u cliente(s) | dedo=%s BPM=%.1f SpO2=%.1f IR=%ld | heapLibre=%u B\n",
+        Serial.printf("[ESTADO] up=%lus | WiFi=%s IP=%s RSSI=%ddBm | MQTT=%s | dashboard=%u cliente(s) | dedo=%s BPM=%.1f SpO2=%.1f IR=%ld | heapLibre=%u B\n",
+                      now / 1000,
                       wifiIsConnected() ? "conectado" : "solo-AP",
                       wifiGetIp().c_str(),
+                      wifiIsConnected() ? WiFi.RSSI() : 0,
                       mqttIsConnected() ? "conectado" : "desconectado",
                       (unsigned)webSocket.connectedClients(),
                       globalFingerPresent ? "si" : "no",
@@ -205,6 +213,8 @@ void loop() {
 // HANDLERS WEB
 // ==========================================
 void handleRoot() {
+    Serial.printf("[HTTP] Sirviendo dashboard a %s\n",
+                  server.client().remoteIP().toString().c_str());
     server.send_P(200, "text/html", INDEX_HTML);
 }
 
