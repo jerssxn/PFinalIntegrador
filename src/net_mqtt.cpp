@@ -116,7 +116,9 @@ void mqttPublishBiometrics(float bpm, float spo2, bool finger, bool beat, long r
     payload += "}";
 
     bool ok = client.publish(TOPIC_PUB, payload.c_str());
-    if (!ok) {
+    if (ok) {
+        Serial.printf("[MQTT] -> %s  %s\n", TOPIC_PUB, payload.c_str());
+    } else {
         Serial.println("[MQTT] Error al publicar (¿payload muy grande o sin conexión?).");
     }
 }

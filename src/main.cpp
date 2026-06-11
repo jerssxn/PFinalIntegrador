@@ -181,7 +181,23 @@ void loop() {
         if (mqttIsConnected()) {
             mqttPublishBiometrics(globalBPM, globalSpO2, globalFingerPresent,
                                   globalBeatDetected, globalRawIR);
+        } else {
+            Serial.println("[ESTADO] MQTT sin conexion: no se publica a la nube (sensor/dashboard siguen OK).");
         }
+    }
+
+    // --- Heartbeat de diagnóstico cada 5 s (SOLO logs, no afecta la lógica) ---
+    static unsigned long lastDebug = 0;
+    if (now - lastDebug >= 5000) {
+        lastDebug = now;
+        Serial.printf("[ESTADO] WiFi=%s IP=%s | MQTT=%s | dashboard=%u cliente(s) | dedo=%s BPM=%.1f SpO2=%.1f IR=%ld | heapLibre=%u B\n",
+                      wifiIsConnected() ? "conectado" : "solo-AP",
+                      wifiGetIp().c_str(),
+                      mqttIsConnected() ? "conectado" : "desconectado",
+                      (unsigned)webSocket.connectedClients(),
+                      globalFingerPresent ? "si" : "no",
+                      globalBPM, globalSpO2, globalRawIR,
+                      (unsigned)ESP.getFreeHeap());
     }
 }
 
@@ -194,7 +210,11 @@ void handleRoot() {
 
 void webSocketEvent(uint8_t num, WStype_t type, uint8_t* payload, size_t length) {
     if (type == WStype_CONNECTED) {
-        Serial.printf("[WS] Cliente #%u conectado\n", num);
+        IPAddress ip = webSocket.remoteIP(num);
+        Serial.printf("[WS] Cliente #%u conectado desde %s (dashboard abierto)\n",
+                      num, ip.toString().c_str());
+    } else if (type == WStype_DISCONNECTED) {
+        Serial.printf("[WS] Cliente #%u desconectado (dashboard cerrado)\n", num);
     }
 }
 
